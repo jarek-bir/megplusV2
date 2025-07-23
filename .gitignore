@@ -1,0 +1,4 @@
+out/
+temp_*
+domains-*
+*.log
