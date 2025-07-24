@@ -324,6 +324,8 @@ run_all_subdomain_tools() {
     local combined_temp="${SCRIPT_DIR}/temp_combined_subs"
     
     log "info" "Running comprehensive subdomain enumeration with multiple tools..."
+    log "info" "Output file will be: $output_file"
+    log "info" "Script directory: $SCRIPT_DIR"
     echo
     
     # Run both tools and collect results
@@ -377,7 +379,7 @@ run_all_subdomain_tools() {
         if command -v httprobe &> /dev/null; then
             log "info" "Probing all discovered subdomains with httprobe..."
             local probe_output="${SCRIPT_DIR}/temp_probe_combined"
-            cat "$combined_temp" | httprobe -c 100 -t 3000 > "$probe_output" 2>/dev/null || true
+            cat "$combined_temp" | httprobe -c 110 -t 3000 > "$probe_output" 2>/dev/null || true
             
             if [ -s "$probe_output" ]; then
                 sort "$probe_output" | uniq > "$output_file"
@@ -396,8 +398,18 @@ run_all_subdomain_tools() {
         echo "https://$domain" > "$output_file"
     fi
     
-    # Cleanup temp files
+    # Cleanup temp files but keep the final output
     rm -f "$combined_temp" "$sublist3r_results" "$subfinder_results"
+    
+    # Verify final output file exists before returning
+    if [ ! -f "$output_file" ] || [ ! -s "$output_file" ]; then
+        log "error" "Final output file was not created properly: $output_file"
+        ls -la "$output_file" 2>/dev/null || log "error" "File does not exist at all"
+        return 1
+    fi
+    
+    local file_size=$(wc -l < "$output_file")
+    log "info" "Successfully created targets file with $file_size lines: $output_file"
     echo "$output_file"
 }
 
@@ -701,7 +713,7 @@ run_all_scans() {
 
 # Function to cleanup temporary files
 cleanup() {
-    local files=("temp" "domains-plus" "domains-sub" "output")
+    local files=("temp" "domains-sub" "output")
     
     for file in "${files[@]}"; do
         if [ -f "${SCRIPT_DIR}/$file" ]; then
@@ -793,7 +805,21 @@ main() {
                 log "error" "Domain required for comprehensive subdomain scan"
                 show_usage
             fi
-            targets=$(run_all_subdomain_tools "$2")
+            log "info" "Starting comprehensive subdomain enumeration..."
+            if targets=$(run_all_subdomain_tools "$2"); then
+                # Remove any trailing whitespace/newlines from targets
+                targets=$(echo "$targets" | tr -d '\n\r')
+                log "info" "Returned targets file: $targets"
+                if [ -f "$targets" ] && [ -s "$targets" ]; then
+                    log "info" "Targets file exists with $(wc -l < "$targets") lines"
+                else
+                    log "error" "Targets file is empty or does not exist: $targets"
+                    exit 1
+                fi
+            else
+                log "error" "Subdomain enumeration failed"
+                exit 1
+            fi
             ;;
         "-p" | "--paths")
             if [ -z "${2:-}" ]; then
